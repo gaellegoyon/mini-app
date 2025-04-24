@@ -1,4 +1,4 @@
-# 🚀 Exercice : Mise en place d'un workflow CI/CD avec GitHub Actions
+# 🚀 Exercice2 : Mise en place d'un workflow CI/CD avec GitHub Actions
 
 ## 🎯 Objectif
 
