@@ -1,0 +1,124 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [main]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: "mini-app/package-lock.json"
+      - name: Install dependencies
+        run: cd mini-app && npm ci
+      - name: Run unit tests
+        run: cd mini-app && npm test
+      - name: Generate test summary
+        run: |
+          echo "## 🧪 Unit Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests passed successfully with Node.js ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+          cache: "npm"
+          cache-dependency-path: "mini-app/package-lock.json"
+      - name: Install dependencies
+        run: cd mini-app && npm ci
+      - name: Lint code
+        run: cd mini-app && npm run lint
+      - name: Generate lint summary
+        run: |
+          echo "## 🔍 Linting Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Code passed linting checks" >> $GITHUB_STEP_SUMMARY
+
+  build:
+    needs: [unit-tests, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+          cache: "npm"
+          cache-dependency-path: "mini-app/package-lock.json"
+      - name: Install dependencies
+        run: cd mini-app && npm ci
+      - name: Build application (simulated)
+        run: |
+          echo "Building the TaskMaster application..."
+          echo "Build completed successfully!"
+
+  deploy-dev:
+    needs: build
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/')
+    runs-on: ubuntu-latest
+    environment: develop
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: true
+    steps:
+      - name: Deploy to development
+        run: |
+          echo "Starting deployment to development environment..."
+          echo "Deploying to ${{ vars.DEPLOY_URL }}"
+          echo "Using deploy token: ${{ secrets.DEPLOY_TOKEN }}"
+          echo "Deployment to development environment completed successfully!"
+
+  auto-merge-and-create-release-pr:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/')
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Merge PR to develop
+        run: gh pr merge --auto --merge "${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create PR from develop to main
+        run: |
+          gh pr create --base main --head develop --title "Release to production" --body "Automated PR from develop to main"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-prod:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to production
+        run: |
+          echo "Starting deployment to production environment..."
+          echo "Deploying to ${{ vars.DEPLOY_URL }}"
+          echo "Using deploy token: ${{ secrets.DEPLOY_TOKEN }}"
+          echo "Deployment to production environment completed successfully!"
+      - name: Generate deployment summary
+        run: |
+          echo "## 🚀 Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully deployed to ${{ vars.DEPLOY_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "🔄 Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
